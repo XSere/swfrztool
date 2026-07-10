@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Header Files\msrexec">
+      <UniqueIdentifier>{04b1bd79-a2f0-4fc2-ac29-a709cdade40c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\utils">
+      <UniqueIdentifier>{243a7ee0-29ef-41eb-87d8-14f7e3556cf7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\utils">
+      <UniqueIdentifier>{aab5696b-55b4-4a2c-b4c0-8ea977b46e58}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\msrexec">
+      <UniqueIdentifier>{532a9f22-d0aa-467e-af41-be157c7e2d1b}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ia32.hpp">
+      <Filter>Header Files\msrexec</Filter>
+    </ClInclude>
+    <ClInclude Include="loadup.hpp">
+      <Filter>Header Files\msrexec</Filter>
+    </ClInclude>
+    <ClInclude Include="msrexec.hpp">
+      <Filter>Header Files\msrexec</Filter>
+    </ClInclude>
+    <ClInclude Include="msrexec_utils.hpp">
+      <Filter>Header Files\msrexec</Filter>
+    </ClInclude>
+    <ClInclude Include="raw_driver.hpp">
+      <Filter>Header Files\msrexec</Filter>
+    </ClInclude>
+    <ClInclude Include="syscall_handler.h">
+      <Filter>Header Files\msrexec</Filter>
+    </ClInclude>
+    <ClInclude Include="vdm.hpp">
+      <Filter>Header Files\msrexec</Filter>
+    </ClInclude>
+    <ClInclude Include="md5.hpp">
+      <Filter>Header Files\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="struct.hpp">
+      <Filter>Header Files\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="core.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="r0utils.hpp">
+      <Filter>Header Files\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="r3utils.hpp">
+      <Filter>Header Files\utils</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="core.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="md5.cpp">
+      <Filter>Source Files\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="msrexec.cpp">
+      <Filter>Source Files\msrexec</Filter>
+    </ClCompile>
+    <ClCompile Include="r0utils.cpp">
+      <Filter>Source Files\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="r3utils.cpp">
+      <Filter>Source Files\utils</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="syscall_handler.asm">
+      <Filter>Header Files\msrexec</Filter>
+    </MASM>
+  </ItemGroup>
+</Project>
