@@ -14,7 +14,7 @@ ULONG64 HookedWriteFunction = 0;
 ULONG64 HookedIoControlFunction = 0;
 
 // shellcode
-__declspec(noinline) EXTERN_C FLT_POSTOP_CALLBACK_STATUS PreCreateCallback(
+__declspec(noinline) EXTERN_C FLT_PREOP_CALLBACK_STATUS PreCreateCallback(
 	PFLT_CALLBACK_DATA Data,
 	PFLT_RELATED_OBJECTS FltObjects,
 	PVOID* CompletionContext,
@@ -25,8 +25,8 @@ __declspec(noinline) EXTERN_C FLT_POSTOP_CALLBACK_STATUS PreCreateCallback(
 	PFLT_FILE_NAME_INFORMATION nameInfo;
 
 	if (!params->isRedirect
-		|| Data == NULL 
-		|| Data->Iopb == NULL 
+		|| Data == NULL
+		|| Data->Iopb == NULL
 		|| Data->RequestorMode == KernelMode
 		|| Data->Iopb->MajorFunction != 0x0) {
 		return FLT_PREOP_SUCCESS_NO_CALLBACK;
@@ -49,6 +49,11 @@ __declspec(noinline) EXTERN_C FLT_POSTOP_CALLBACK_STATUS PreCreateCallback(
 		}
 	}
 	params->FltReleaseFileNameInformation(nameInfo);
+
+	ULONG createOptions = Data->Iopb->Options & 0x00FFFFFF;
+	if (createOptions & FILE_SEQUENTIAL_ONLY) {
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
 
 	REPARSE_DATA_BUFFER* repBuffer = (REPARSE_DATA_BUFFER*)params->ExAllocatePool(0, sizeof(REPARSE_DATA_BUFFER) + sizeof(redirectFilePathNt));
 	if (!repBuffer) {
@@ -86,10 +91,12 @@ __declspec(noinline) EXTERN_C int PreCreateCallbackEnd() {
 }
 
 VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutine) {
+	BYTE ret1[] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
 	BYTE mov_r9[] = { 0x49, 0xB9, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 	BYTE jmp[] = { 0x48, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xE0 };
 	WCHAR swfreezeDriverName[] = L"\\Driver\\SWFreeze";
 	WCHAR seewoKeLiteLadyDriverName[] = L"\\FileSystem\\SeewoKeLiteLady";
+
 	ULONG_PTR preCreateFuncStartAddr = (ULONG_PTR)PreCreateCallback;
 	ULONG_PTR preCreateFuncEndAddr = (ULONG_PTR)PreCreateCallbackEnd;
 	int preCreateFuncSize = preCreateFuncEndAddr - preCreateFuncStartAddr;
@@ -109,15 +116,22 @@ VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutin
 		return;
 	}
 
-	DWORD64 seewoFltFunctionAddress = ScanPattern(pSeewoKeLiteLadyDriverObject->DriverStart, pSeewoKeLiteLadyDriverObject->DriverSize, (BYTE*)"\x4D\x8B\xF8\x48\x8B\xF2\x48\x8B\xF9\x45\x33\xED\x4C\x89", 14) - 0x2A;
-	if (!(seewoFltFunctionAddress + 0x2A) || !MmIsAddressValid((PVOID)seewoFltFunctionAddress)) {
+	DWORD64 seewoSetInfoFltFunctionAddress = ScanPattern(pSeewoKeLiteLadyDriverObject->DriverStart, pSeewoKeLiteLadyDriverObject->DriverSize, (BYTE*)"\x48\x8B\xF2\x48\x8B\xF9\x45\x33\xFF\x4C\x89", 11) - 0x30;
+	if (!(seewoSetInfoFltFunctionAddress + 0x30) || !MmIsAddressValid((PVOID)seewoSetInfoFltFunctionAddress)) {
+		Logger("[-] Failed to find SeewoKeLiteLady set information file filter function pattern address or address is invalid...\n");
+		return;
+	}
+	Logger("[+] Found SeewoKeLiteLady set information file filter function pattern address -> %016llx\n", seewoSetInfoFltFunctionAddress);
+
+	DWORD64 seewoCreateFltFunctionAddress = ScanPattern(pSeewoKeLiteLadyDriverObject->DriverStart, pSeewoKeLiteLadyDriverObject->DriverSize, (BYTE*)"\x4D\x8B\xF8\x48\x8B\xF2\x48\x8B\xF9\x45\x33\xED\x4C\x89", 14) - 0x2A;
+	if (!(seewoCreateFltFunctionAddress + 0x2A) || !MmIsAddressValid((PVOID)seewoCreateFltFunctionAddress)) {
 		Logger("[-] Failed to find SeewoKeLiteLady file filter function pattern address or address is invalid...\n");
 		return;
 	}
-	Logger("[+] Found SeewoKeLiteLady file filter function pattern address -> %016llx\n", seewoFltFunctionAddress);
+	Logger("[+] Found SeewoKeLiteLady file filter function pattern address -> %016llx\n", seewoCreateFltFunctionAddress);
 
-	if (RtlCompareMemory((PVOID)seewoFltFunctionAddress, mov_r9, 2) == 2) {
-		PCALLBACK_PARAMS params = *(PCALLBACK_PARAMS*)(seewoFltFunctionAddress + 2);
+	if (RtlCompareMemory((PVOID)seewoCreateFltFunctionAddress, mov_r9, 2) == 2) {
+		PCALLBACK_PARAMS params = *(PCALLBACK_PARAMS*)(seewoCreateFltFunctionAddress + 2);
 
 		if (((PFREEZE_CONFIG)config)->volumeProtected == -1) {
 			params->isRedirect = FALSE;
@@ -127,7 +141,7 @@ VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutin
 
 		params->isRedirect = TRUE;
 		Logger("[*] SeewoKeLiteLady file filter function is already modified, skipping...\n");
-		return;	
+		return;
 	}
 	else if (((PFREEZE_CONFIG)config)->volumeProtected == -1) {
 		Logger("[-] File filter not installed...\n");
@@ -148,45 +162,40 @@ VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutin
 	*(PCALLBACK_PARAMS*)(mov_r9 + 2) = params;
 
 	PVOID prefunc = ExAllocatePool(0, preCreateFuncSize);
+	if (!prefunc) {
+		Logger("[-] Fail to allocate memory for shellcode!\n");
+		return;
+	}
+
 	RtlCopyMemory(prefunc, (PVOID)preCreateFuncStartAddr, preCreateFuncSize);
 	*(PVOID*)(jmp + 2) = prefunc;
 	RtlCopyMemory(prefunc, (PVOID)preCreateFuncStartAddr, preCreateFuncSize);
 	Logger("[+] Allocated shellcode for file filter function at -> 0x%p\n", prefunc);
 
-	PMDL mdl = IoAllocateMdl((PVOID)seewoFltFunctionAddress, sizeof(jmp) + sizeof(mov_r9), FALSE, FALSE, NULL);
-	if (mdl == NULL)
-	{
-		Logger("[-] Failed to allocate MDL for file filter function\n");
+	PMDL pMdl = NULL;
+	PVOID writableAddress = InitRWmemForShellcode((PVOID)seewoCreateFltFunctionAddress, sizeof(mov_r9) + sizeof(jmp), &pMdl);
+	if (!writableAddress) {
+		Logger("[-] Failed to get writable address for file filter function!\n");
 		return;
 	}
 
-	__try
-	{
-		MmProbeAndLockPages(mdl, KernelMode, IoReadAccess);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		Logger("[-] Failed to lock pages for file filter function\n");
-		IoFreeMdl(mdl);
+	RtlCopyMemory(writableAddress, mov_r9, sizeof(mov_r9));
+	writableAddress = (BYTE*)writableAddress + sizeof(mov_r9);
+	RtlCopyMemory(writableAddress, jmp, sizeof(jmp));
+	ReleaseRwmem(pMdl, writableAddress);
+	Logger("[+] Successfully wrote to filter function!\n");
+
+	pMdl = NULL;
+	writableAddress = InitRWmemForShellcode((PVOID)seewoSetInfoFltFunctionAddress, sizeof(ret1), &pMdl);
+	if (!writableAddress) {
+		Logger("[-] Failed to get writable address for file filter function!\n");
 		return;
 	}
 
-	PVOID writableAddress = NULL;
-	do {
-		writableAddress = MmMapLockedPagesSpecifyCache(mdl, KernelMode, 0, NULL, FALSE, NormalPagePriority | MdlMappingNoExecute);
-		if (writableAddress == NULL) break;
-		RtlCopyMemory(writableAddress, mov_r9, sizeof(mov_r9));
-		writableAddress = (BYTE*)writableAddress + sizeof(mov_r9);
-		RtlCopyMemory(writableAddress, jmp, sizeof(jmp));
-		Logger("[+] Successfully wrote to filter function!\n");
-	} while (FALSE);
+	RtlCopyMemory(writableAddress, ret1, sizeof(ret1));
+	ReleaseRwmem(pMdl, writableAddress);
+	Logger("[+] Successfully wrote to set information filter function!\n");
 
-	if (writableAddress != NULL) MmUnmapLockedPages(writableAddress, mdl);
-	if (mdl != NULL)
-	{
-		MmUnlockPages(mdl);
-		IoFreeMdl(mdl);
-	}
 	return;
 }
 

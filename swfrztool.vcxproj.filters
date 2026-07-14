@@ -79,6 +79,9 @@
     <ClCompile Include="r3utils.cpp">
       <Filter>Source Files\utils</Filter>
     </ClCompile>
+    <ClCompile Include="raw_dll.hpp">
+      <Filter>Header Files\utils</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="syscall_handler.asm">

@@ -158,7 +158,44 @@ BOOLEAN GetDriverBaseAndSize(const char* targetModuleName, PVOID* pDriverBase, S
 	return TRUE;
 }
 
-// r0
+PVOID InitRWmemForShellcode(PVOID base, SIZE_T size, PMDL* ppMdl) {
+	PMDL pMdl = IoAllocateMdl(base, size, FALSE, FALSE, NULL);
+	if (pMdl == NULL)
+	{
+		Logger("[-] Failed to allocate MDL for file filter function\n");
+		return NULL;
+	}
+	*ppMdl = pMdl;
+
+	__try
+	{
+		MmProbeAndLockPages(pMdl, KernelMode, IoReadAccess);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		Logger("[-] Failed to lock pages for file filter function\n");
+		ReleaseRwmem(pMdl, NULL);
+		return NULL;
+	}
+
+	PVOID addr = MmMapLockedPagesSpecifyCache(pMdl, KernelMode, 0, NULL, FALSE, NormalPagePriority | MdlMappingNoExecute);
+	if (addr == NULL) {
+		ReleaseRwmem(pMdl, NULL);
+		return NULL;
+	}
+
+	return addr;
+}
+
+VOID ReleaseRwmem(PMDL pMdl, PVOID addr) {
+	if (addr != NULL) MmUnmapLockedPages(addr, pMdl);
+	if (pMdl != NULL)
+	{
+		MmUnlockPages(pMdl);
+		IoFreeMdl(pMdl);
+	}
+}
+
 VOID InitFunction(PVOID krnl_base, get_system_routine_t get_kroutine) {
 	InitFunctionByName(DbgPrint);
 	InitFunctionByName(IoGetDeviceObjectPointer);
@@ -169,7 +206,6 @@ VOID InitFunction(PVOID krnl_base, get_system_routine_t get_kroutine) {
 	InitFunctionByName(ExFreePool);
 }
 
-// r0
 VOID InitFunctionForFileFilter(PVOID krnl_base, get_system_routine_t get_kroutine) {
 	PVOID fltMgrBase;
 	SIZE_T fltMgrSize;

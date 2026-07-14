@@ -15,7 +15,7 @@ typedef struct _CALLBACK_PARAMS {
     WCHAR redirectPath[MAX_PATH];
 } CALLBACK_PARAMS, * PCALLBACK_PARAMS;
 
-EXTERN_C FLT_POSTOP_CALLBACK_STATUS PreCreateCallback(PFLT_CALLBACK_DATA Data, PFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext, PCALLBACK_PARAMS params);
+EXTERN_C FLT_PREOP_CALLBACK_STATUS PreCreateCallback(PFLT_CALLBACK_DATA Data, PFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext, PCALLBACK_PARAMS params);
 VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutine);
 VOID ModifyConfigByMjFunc(PVOID krnl_base, get_system_routine_t get_kroutine);
 VOID ModifyConfigByWhiteList(PVOID krnl_base, get_system_routine_t get_kroutine);

