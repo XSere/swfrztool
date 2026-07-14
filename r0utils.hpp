@@ -14,3 +14,5 @@ PVOID GetFunctionByExportDir(PVOID FltMgrBase, const char* FunctionName);
 VOID InitFunction(PVOID krnl_base, get_system_routine_t get_kroutine);
 VOID InitFunctionForFileFilter(PVOID krnl_base, get_system_routine_t get_kroutine);
 PDRIVER_OBJECT GetDriverObjectByName(WCHAR* DriverName);
+PVOID InitRWmemForShellcode(PVOID base, SIZE_T size, PMDL* ppMdl);
+VOID ReleaseRwmem(PMDL pMdl, PVOID addr);
