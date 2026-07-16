@@ -37,6 +37,8 @@ swfrztool flt <drive/off>...
 
 使用off选项禁用
 
+### info 获取冰点还原相关信息
+
 ### help 获取帮助
 
 ## 示例
@@ -72,3 +74,7 @@ swfrztool flt off
 1.更新了flt参数 实现自动持久化
 
 2.flt参数劫持的回调留了后门用于区分敌我 使用config参数时无需禁用flt
+### V1.2
+1.更新了info参数
+
+2.优化代码
