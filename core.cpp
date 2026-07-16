@@ -1,7 +1,12 @@
 #include "core.hpp"
 
+BYTE ret1[] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
+BYTE mov_r9[] = { 0x49, 0xB9, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+BYTE jmp[] = { 0x48, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xE0 };
 WCHAR configFilePathNt[] = L"\\Device\\HarddiskVolume3\\ProgramData\\SeewoFreezeKernelConfig\\VolumeInfo.config";
 WCHAR redirectFilePathNt[] = L"\\Device\\HarddiskVolume3\\ProgramData\\SeewoFreezeKernelConfig\\redirect.config";
+WCHAR swfreezeDriverName[] = L"\\Driver\\SWFreeze";
+WCHAR seewoKeLiteLadyDriverName[] = L"\\FileSystem\\SeewoKeLiteLady";
 
 PDRIVER_OBJECT pSWFreezeDriverObject;
 PDRIVER_OBJECT pDiskDriverObject;
@@ -91,12 +96,6 @@ __declspec(noinline) EXTERN_C int PreCreateCallbackEnd() {
 }
 
 VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutine) {
-	BYTE ret1[] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
-	BYTE mov_r9[] = { 0x49, 0xB9, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-	BYTE jmp[] = { 0x48, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xE0 };
-	WCHAR swfreezeDriverName[] = L"\\Driver\\SWFreeze";
-	WCHAR seewoKeLiteLadyDriverName[] = L"\\FileSystem\\SeewoKeLiteLady";
-
 	ULONG_PTR preCreateFuncStartAddr = (ULONG_PTR)PreCreateCallback;
 	ULONG_PTR preCreateFuncEndAddr = (ULONG_PTR)PreCreateCallbackEnd;
 	int preCreateFuncSize = preCreateFuncEndAddr - preCreateFuncStartAddr;
@@ -104,7 +103,6 @@ VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutin
 	InitFunction(krnl_base, get_kroutine);
 	InitFunctionForFileFilter(krnl_base, get_kroutine);
 
-	IoDriverObjectType = (PVOID*)get_kroutine(krnl_base, "IoDriverObjectType");
 	pSWFreezeDriverObject = GetDriverObjectByName(swfreezeDriverName);
 	if (!pSWFreezeDriverObject) {
 		Logger("[-] Failed to get SWFreeze driver object by name!\n");
@@ -140,7 +138,7 @@ VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutin
 		}
 
 		params->isRedirect = TRUE;
-		Logger("[*] SeewoKeLiteLady file filter function is already modified, skipping...\n");
+		Logger("[*] SeewoKeLiteLady create file filter function is already modified, skipping...\n");
 		return;
 	}
 	else if (((PFREEZE_CONFIG)config)->volumeProtected == -1) {
@@ -207,7 +205,6 @@ VOID ModifyConfigByMjFunc(PVOID krnl_base, get_system_routine_t get_kroutine) {
 	WCHAR diskDriverName[] = L"\\Driver\\Disk";
 
 	InitFunction(krnl_base, get_kroutine);
-	IoDriverObjectType = (PVOID*)get_kroutine(krnl_base, "IoDriverObjectType");
 
 	Logger("[*] Starting to recover major function...\n");
 
@@ -270,7 +267,6 @@ VOID ModifyConfigByMjFunc(PVOID krnl_base, get_system_routine_t get_kroutine) {
 }
 
 VOID ModifyConfigByWhiteList(PVOID krnl_base, get_system_routine_t get_kroutine) {
-	NTSTATUS status;
 	PVOID DriverBase;
 	SIZE_T DriverSize;
 	ULONG64 Address = 0;
@@ -287,14 +283,14 @@ VOID ModifyConfigByWhiteList(PVOID krnl_base, get_system_routine_t get_kroutine)
 	Address = ScanPattern(DriverBase, DriverSize, (BYTE*)"\x41\x8B\xF4\xBF", 4);
 
 	INT32 offset = *(INT32*)(Address - 0x4);
-	PVolumeInfo pVolumeInfo = (PVolumeInfo)(Address + offset);
+	PVOLUME_INFO_R0 pVolumeInfo = (PVOLUME_INFO_R0)(Address + offset);
 
 	if (!MmIsAddressValid((PVOID)pVolumeInfo)) {
 		Logger("[-] Invalid volume info table address.\n");
 		return;
 	}
 
-	VolumeInfo volumeCInfo = pVolumeInfo[2];
+	VOLUME_INFO_R0 volumeCInfo = pVolumeInfo[2];
 	volumeCInfo.whiteListItemCount = 1;
 	volumeCInfo.itemStartSectorList[0] = startSector;
 	volumeCInfo.itemSectorOffsetList[0] = byteOffset;
@@ -306,7 +302,6 @@ VOID ModifyConfigByWhiteList(PVOID krnl_base, get_system_routine_t get_kroutine)
 }
 
 VOID ModifyConfigByWhiteListEx(PVOID krnl_base, get_system_routine_t get_kroutine) {
-	NTSTATUS status;
 	PVOID DriverBase;
 	SIZE_T DriverSize;
 	ULONG64 Address = 0;
@@ -322,7 +317,7 @@ VOID ModifyConfigByWhiteListEx(PVOID krnl_base, get_system_routine_t get_kroutin
 
 	Address = ScanPattern(DriverBase, DriverSize, (BYTE*)"\x41\x8B\xF4\xBF", 4);
 	INT32 offset = *(INT32*)(Address - 0x4);
-	PVolumeInfo pVolumeInfo = (PVolumeInfo)(Address + offset);
+	PVOLUME_INFO_R0 pVolumeInfo = (PVOLUME_INFO_R0)(Address + offset);
 
 	if (!MmIsAddressValid((PVOID)pVolumeInfo)) {
 		Logger("[-] Invalid volume info table address.\n");
@@ -337,4 +332,65 @@ VOID ModifyConfigByWhiteListEx(PVOID krnl_base, get_system_routine_t get_kroutin
 	}
 
 	Logger("[+] Successfully disabled all protections!\n");
+}
+
+VOID GetFreezeInfo(PVOID krnl_base, get_system_routine_t get_kroutine) {
+	PVOID DriverBase;
+	SIZE_T DriverSize;
+	ULONG64 Address = 0;
+
+	InitFunction(krnl_base, get_kroutine);
+	if (!GetDriverBaseAndSize("SWFreeze.sys", &DriverBase, &DriverSize)) {
+		Logger("[-] Failed to get SWFreeze driver base and size!\n");
+		return;
+	}
+	Logger("[*] SWFreeze driver base -> 0x%p, SWFreeze driver size -> 0x%p\n", DriverBase, DriverSize);
+
+	Address = ScanPattern(DriverBase, DriverSize, (BYTE*)"\x41\x8B\xF4\xBF", 4);
+
+	INT32 offset = *(INT32*)(Address - 0x4);
+	PVOLUME_INFO_R0 pVolumeInfo = (PVOLUME_INFO_R0)(Address + offset);
+
+	if (!MmIsAddressValid((PVOID)pVolumeInfo)) {
+		Logger("[-] Invalid volume info table address.\n");
+		return;
+	}
+
+	for (int i = 0; i < 26; i++) {
+		PVOLUME_INFO_R3 pVolumeInfoR3 = volumeInfoTable[i];
+		if (!pVolumeInfoR3) continue;
+
+		VOLUME_INFO_R0 volumeInfoR0 = pVolumeInfo[i];
+		if (!volumeInfoR0.isProtected && !volumeInfoR0.isProtected2) {
+			pVolumeInfoR3->volumeProtectType = UNPROTECTED;
+		}
+		else if (volumeInfoR0.isProtected && volumeInfoR0.isProtected2) {
+			pVolumeInfoR3->volumeProtectType = PROTECTED;
+		}
+		else if (!volumeInfoR0.isProtected && volumeInfoR0.isProtected2) {
+			pVolumeInfoR3->volumeProtectType = BYPASS;
+		}
+		else {
+			pVolumeInfoR3->volumeProtectType = UNKNOWN;
+		}
+		pVolumeInfoR3->reservedBlockBytes = volumeInfoR0.reservedBlockBytes;
+		pVolumeInfoR3->physicalStartingOffset = volumeInfoR0.physicalStartingOffset;
+		pVolumeInfoR3->volumeTotalBytes = volumeInfoR0.volumeTotalBytes;
+		pVolumeInfoR3->volumeSectorCount = volumeInfoR0.volumeSectorCount;
+	}
+
+	pSeewoKeLiteLadyDriverObject = GetDriverObjectByName(seewoKeLiteLadyDriverName);
+	if (pSeewoKeLiteLadyDriverObject) {
+		DWORD64 seewoCreateFltFunctionAddress = ScanPattern(pSeewoKeLiteLadyDriverObject->DriverStart, pSeewoKeLiteLadyDriverObject->DriverSize, (BYTE*)"\x4D\x8B\xF8\x48\x8B\xF2\x48\x8B\xF9\x45\x33\xED\x4C\x89", 14) - 0x2A;
+		if (!(seewoCreateFltFunctionAddress + 0x2A) || !MmIsAddressValid((PVOID)seewoCreateFltFunctionAddress)) {
+			Logger("[-] Failed to find SeewoKeLiteLady file filter function pattern address or address is invalid...\n");
+			return;
+		}
+		if (RtlCompareMemory((PVOID)seewoCreateFltFunctionAddress, mov_r9, 2) == 2) {
+			PCALLBACK_PARAMS params = *(PCALLBACK_PARAMS*)(seewoCreateFltFunctionAddress + 2);
+			if (params->isRedirect) filterInfo = INSTALLED;
+			else filterInfo = DISABLED;
+		}
+		else filterInfo = NOT_INSTALLED;
+	}
 }

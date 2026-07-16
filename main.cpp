@@ -71,6 +71,10 @@ TASK ArgumentsHandler(int argc, char** argv) {
         }
         return task;
     }
+    else if (strcmp(argv[1], "info") == 0) {
+        task = TASK_GET_FREEZE_INFO;
+        return task;
+    }
     else if (strcmp(argv[1], "help") == 0) {
         task = TASK_HELP;
         return task;
@@ -126,75 +130,95 @@ int __cdecl main(int argc, char** argv) {
 
     TASK task = ArgumentsHandler(argc, argv);
     switch (task) {
-    case TASK_ERROR:
-        printf("[-] Invalid arguments. Use help for help...\n");
-        return 1;
-
-    case TASK_HELP:
-        wprintf(L"Usage:\n");
-        wprintf(L"config [options] <drive>           修改冰点还原配置\n");
-        wprintf(L"  -r                               使用注入白名单的方式修改冰点配置 重启后生效\n");
-        wprintf(L"  -c                               使用修改驱动保护状态的方式修改配置 立即生效\n");
-        wprintf(L"  -x                               使用替换分发例程的方式修改冰点配置 立即生效\n");
-        wprintf(L"  drive                            指定要修改的卷符号以空格分隔 若开启保护而未保护卷C则自动保护卷C\n");
-        wprintf(L"\n");
-        wprintf(L"flt <drive/off>                    模拟冰点还原状态 使用前确保加载SeewoKeLiteLady驱动 并关闭还原\n");
-        wprintf(L"\n");
-        wprintf(L"help                               显示帮助信息\n");
-        wprintf(L"\n");
-        wprintf(L"Example:\n");
-        wprintf(L"  %hs config -c                    解除冰点还原\n", argv[0]);
-        wprintf(L"  %hs config -r C D E              保护卷C D E\n", argv[0]);
-        wprintf(L"  %hs flt C D E                    模拟还原保护卷C D E\n", argv[0]);
-        wprintf(L"  %hs flt off                      关闭还原状态模拟\n", argv[0]);
-        return 0;
-
-    case TASK_MODIFY_CONFIG_BY_MJ_FUNC:
-    {
-        if (!InitR0Executer()) return 1;
-        if (!R0Executer(ModifyConfigByMjFunc)) return 1;
-        if (!GenerateFreezeConfig(volumeArguments)) return 1;
-        if (!WriteConfigFile(TRUE)) return 1;
-        printf("[+] Finished\n");
-        return 0;
-    }
-
-    case TASK_MODIFY_CONFIG_BY_WHITE_LIST:
-    {
-        GetConfigFileSectorInfo();
-        if (!InitR0Executer()) return 1;
-        if (!R0Executer(ModifyConfigByWhiteList)) return 1;
-        if (!GenerateFreezeConfig(volumeArguments)) return 1;
-        if (!WriteConfigFile(TRUE)) return 1;
-        printf("[+] Finished\n");
-        return 0;
-    }
-
-    case TASK_MODIFY_CONFIG_BY_WHITE_LIST_EX:
-    {
-        if (!InitR0Executer()) return 1;
-        if (!R0Executer(ModifyConfigByWhiteListEx)) return 1;
-        if (!GenerateFreezeConfig(volumeArguments)) return 1;
-        if (!WriteConfigFile(TRUE)) return 1;
-        printf("[+] Finished\n");
-        return 0;
-    }
-
-    case TASK_INSTALL_FILE_FILTER:
-    {
-        if (!InitR0Executer()) return 1;
-        if (!GenerateFreezeConfig(volumeArguments)) return 1;
-        if (!R0Executer(InstallCreateFileCallback)) return 1;
-        if (volumeArguments != -1) {
-            if (!InitRedirectFile()) return 1;
-            if (!WriteConfigFile(FALSE)) return 1;
-            if (!InitDllFile(volumeArguments)) return 1;
+        case TASK_ERROR:
+        {
+            printf("[-] Invalid arguments. Use help for help...\n");
+            return 1;
         }
-        else {
-            if (!DeleteDllFile()) return 1;
+
+        case TASK_HELP:
+        {
+            wprintf(L"Usage:\n");
+            wprintf(L"config [options] <drive>           修改冰点还原配置\n");
+            wprintf(L"  -r                               使用注入白名单的方式修改冰点配置 重启后生效\n");
+            wprintf(L"  -c                               使用修改驱动保护状态的方式修改配置 立即生效\n");
+            wprintf(L"  -x                               使用替换分发例程的方式修改冰点配置 立即生效\n");
+            wprintf(L"  drive                            指定要修改的卷符号以空格分隔 若开启保护而未保护卷C则自动保护卷C\n");
+            wprintf(L"\n");
+            wprintf(L"flt <drive/off>                    模拟冰点还原状态 使用前确保加载SeewoKeLiteLady驱动 并关闭还原\n");
+            wprintf(L"\n");
+            wprintf(L"help                               显示帮助信息\n");
+            wprintf(L"\n");
+            wprintf(L"Example:\n");
+            wprintf(L"  %hs config -c                    解除冰点还原\n", argv[0]);
+            wprintf(L"  %hs config -r C D E              保护卷C D E\n", argv[0]);
+            wprintf(L"  %hs flt C D E                    模拟还原保护卷C D E\n", argv[0]);
+            wprintf(L"  %hs flt off                      关闭还原状态模拟\n", argv[0]);
+            return 0;
         }
-        printf("[+] Finished\n");
-        return 0;
-    }
+
+        case TASK_MODIFY_CONFIG_BY_MJ_FUNC:
+        {
+            if (!IsDriverLoaded(L"SWFreeze.sys")) return 1;
+            if (!InitR0Executer()) return 1;
+            if (!R0Executer(ModifyConfigByMjFunc)) return 1;
+            if (!GenerateFreezeConfig(volumeArguments)) return 1;
+            if (!WriteConfigFile(TRUE)) return 1;
+            printf("[+] Finished\n");
+            return 0;
+        }
+
+        case TASK_MODIFY_CONFIG_BY_WHITE_LIST:
+        {
+            if (!IsDriverLoaded(L"SWFreeze.sys")) return 1;
+            GetConfigFileSectorInfo();
+            if (!InitR0Executer()) return 1;
+            if (!R0Executer(ModifyConfigByWhiteList)) return 1;
+            if (!GenerateFreezeConfig(volumeArguments)) return 1;
+            if (!WriteConfigFile(TRUE)) return 1;
+            printf("[+] Finished\n");
+            return 0;
+        }
+
+        case TASK_MODIFY_CONFIG_BY_WHITE_LIST_EX:
+        {
+            if (!IsDriverLoaded(L"SWFreeze.sys")) return 1;
+            if (!InitR0Executer()) return 1;
+            if (!R0Executer(ModifyConfigByWhiteListEx)) return 1;
+            if (!GenerateFreezeConfig(volumeArguments)) return 1;
+            if (!WriteConfigFile(TRUE)) return 1;
+            printf("[+] Finished\n");
+            return 0;
+        }
+
+        case TASK_INSTALL_FILE_FILTER:
+        {
+            if (!IsDriverLoaded(L"SWFreeze.sys")) return 1;
+            if (!IsFilterDriverLoaded(L"SeewoKeLiteLady")) return 1;
+            if (!GenerateFreezeConfig(volumeArguments)) return 1;
+            if (!InitR0Executer()) return 1;
+            if (!R0Executer(InstallCreateFileCallback)) return 1;
+            if (volumeArguments != -1) {
+                if (!InitRedirectFile()) return 1;
+                if (!WriteConfigFile(FALSE)) return 1;
+                if (!InitDllFile(volumeArguments)) return 1;
+            }
+            else {
+                if (!DeleteDllFile()) return 1;
+            }
+            printf("[+] Finished\n");
+            return 0;
+        }
+
+        case TASK_GET_FREEZE_INFO:
+        {
+            if (!IsDriverLoaded(L"SWFreeze.sys")) return 1;
+            if (!InitVolumesInfoTable()) return 1;
+            if (!InitR0Executer()) return 1;
+            if (!R0Executer(GetFreezeInfo)) return 1;
+            PrintVolumeInfo();
+            printf("[+] Finished\n");
+            return 0;
+        }
     }
 }

@@ -66,6 +66,7 @@ PDRIVER_OBJECT GetDriverObjectByName(WCHAR* DriverName) {
 
 DWORD64 ScanPatternByMask(PVOID base, SIZE_T limit, BYTE* pattern, SIZE_T patternSize, BYTE* mask) {
 	DWORD64 TargetAddress = 0;
+
 	for (SIZE_T i = 0; i < limit - patternSize; i++) {
 		BOOLEAN found = TRUE;
 		for (SIZE_T j = 0; j < patternSize; j++) {
@@ -204,6 +205,7 @@ VOID InitFunction(PVOID krnl_base, get_system_routine_t get_kroutine) {
 	InitFunctionByName(ZwQuerySystemInformation);
 	InitFunctionByName(ExAllocatePool);
 	InitFunctionByName(ExFreePool);
+	IoDriverObjectType = (PVOID*)get_kroutine(krnl_base, "IoDriverObjectType");
 }
 
 VOID InitFunctionForFileFilter(PVOID krnl_base, get_system_routine_t get_kroutine) {

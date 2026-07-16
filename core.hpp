@@ -20,3 +20,4 @@ VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutin
 VOID ModifyConfigByMjFunc(PVOID krnl_base, get_system_routine_t get_kroutine);
 VOID ModifyConfigByWhiteList(PVOID krnl_base, get_system_routine_t get_kroutine);
 VOID ModifyConfigByWhiteListEx(PVOID krnl_base, get_system_routine_t get_kroutine);
+VOID GetFreezeInfo(PVOID krnl_base, get_system_routine_t get_kroutine);

@@ -19,6 +19,11 @@
 #include <map>
 #include "ia32.hpp"
 
+#include <Psapi.h>
+#include <fltuser.h>
+#pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "fltLib.lib")
+
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
 {
      HANDLE Section;

@@ -253,10 +253,10 @@ typedef struct _FRZ_BITMAP
     DWORD64 BlockMask;
     DWORD64 LeafNodeSize;
     DWORD64 BlockCount;
-    VOLUME_BITMAP_BUFFER* BlockTable;
+    PVOLUME_BITMAP_BUFFER* BlockTable;
 } FRZ_BITMAP, * PFRZ_BITMAP;
 
-typedef struct _VolumeInfo
+typedef struct _VOLUME_INFO_R0
 {
     BYTE isProtected;
     BYTE isProtected2;
@@ -280,7 +280,7 @@ typedef struct _VolumeInfo
     DWORD64 itemStartSectorList2[4];
     DWORD64 itemSectorOffsetList2[4];
     DWORD64 WhiteList2ItemCount;
-} VolumeInfo, * PVolumeInfo;
+} VOLUME_INFO_R0, * PVOLUME_INFO_R0;
 #pragma pack(pop)
 
 enum TASK {
@@ -290,7 +290,7 @@ enum TASK {
     TASK_MODIFY_CONFIG_BY_WHITE_LIST,
     TASK_MODIFY_CONFIG_BY_WHITE_LIST_EX,
     TASK_INSTALL_FILE_FILTER,
-    TASK_MODIFY_PROTECTION_STATUS
+    TASK_GET_FREEZE_INFO
 };
 
 using get_system_routine_t = void* (*)(void*, const char*);
