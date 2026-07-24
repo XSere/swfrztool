@@ -7,8 +7,13 @@ WCHAR cmdFilePath[] = L"C:\\Program Files (x86)\\Seewo\\SeewoService\\SeewoHugoL
 PVOLUME_INFO_R3 volumeInfoTable[26] = { NULL };
 FILTER_INSTALLATION_STATUS filterInfo;
 BYTE config[1024] = { 0 };
-DWORD64 startSector = 0;
-DWORD64 byteOffset = 0;
+
+VOID R3Logger(LPCSTR fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	vprintf(fmt, args);
+	va_end(args);
+}
 
 VOID GetMd5(BYTE* data, DWORD size, BYTE* md5_out) {
 	MD5Context ctx;
@@ -22,7 +27,7 @@ BOOLEAN InitVolumesInfoTable() {
 	DWORD driveMask = GetLogicalDrives();
 
 	if (driveMask == 0) {
-		printf("[-] Failed to get drive mask.");
+		R3Logger("[-] Failed to get drive mask.");
 		return FALSE;
 	}
 
@@ -32,7 +37,7 @@ BOOLEAN InitVolumesInfoTable() {
 			if (GetDriveTypeA(driveName) == DRIVE_FIXED) {
 				PVOLUME_INFO_R3 pVolumeInfo = (PVOLUME_INFO_R3)malloc(sizeof(VOLUME_INFO_R3));
 				if (!pVolumeInfo) {
-					printf("[-] Failed to allocate memory for volume information.");
+					R3Logger("[-] Failed to allocate memory for volume information.");
 					return FALSE;
 				}
 				RtlZeroMemory(pVolumeInfo, sizeof(VOLUME_INFO_R3));
@@ -63,7 +68,7 @@ BOOLEAN IsDriverLoaded(const wchar_t* driverName) {
 			}
 		}
 	}
-	wprintf(L"[-] %s driver not loaded.\n", driverName);
+	R3Logger("[-] %ws driver not loaded.\n", driverName);
 	return FALSE;
 }
 
@@ -98,13 +103,15 @@ BOOLEAN IsFilterDriverLoaded(const wchar_t* filterName) {
 	}
 
 	free(pBuffer);
+
+	if (!found) R3Logger("[-] %ws file filter driver not loaded.\n", filterName);
 	return found;
 }
 
 BOOLEAN ReadConfigFile(const wchar_t* filePath, BYTE* config) {
 	HANDLE hFile = CreateFile(filePath, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) {
-		printf("[-] Failed to open config file for reading.\n");
+		R3Logger("[-] Failed to open config file for reading.\n");
 		return FALSE;
 	}
 
@@ -112,7 +119,7 @@ BOOLEAN ReadConfigFile(const wchar_t* filePath, BYTE* config) {
 	DWORD bytesRead = 0;
 	if (!ReadFile(hFile, config, fileSize, &bytesRead, NULL) || bytesRead != fileSize) {
 		CloseHandle(hFile);
-		printf("[-] Failed to read config file.\n");
+		R3Logger("[-] Failed to read config file.\n");
 		return FALSE;
 	}
 
@@ -120,7 +127,7 @@ BOOLEAN ReadConfigFile(const wchar_t* filePath, BYTE* config) {
 	GetMd5(config + 16, fileSize - 16, md5);
 	if (memcmp(md5, config, 16) != 0) {
 		CloseHandle(hFile);
-		printf("[-] Config file integrity check failed. MD5 checksum does not match.\n");
+		R3Logger("[-] Config file integrity check failed. MD5 checksum does not match.\n");
 		return FALSE;
 	}
 
@@ -135,59 +142,281 @@ BOOLEAN GenerateFreezeConfig(DWORD volumeProtected) {
 	}
 
 	SIZE_T fileSize = 1024;
-	printf("[*] Generating config file...\n");
+	R3Logger("[*] Generating config file...\n");
 	ReadConfigFile(configFilePath, config);
 
 	PFREEZE_CONFIG _config = (PFREEZE_CONFIG)config;
 	_config->volumeProtected = volumeProtected;
 	_config->VolumeProtected2 = volumeProtected;
 	GetMd5(config + 16, fileSize - 16, _config->md5);
-	printf("[*] MD5 checksum updated.\n");
+	R3Logger("[*] MD5 checksum updated.\n");
 
-	printf("[+] Config file generated successfully!\n");
+	R3Logger("[+] Config file generated successfully!\n");
 	return TRUE;
 }
 
-BOOLEAN GetConfigFileSectorInfo() {
-	HANDLE hFile = CreateFileW(configFilePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+int CompareRange(const void* a, const void* b) {
+	SECTOR_RANGE* ra = (SECTOR_RANGE*)a;
+	SECTOR_RANGE* rb = (SECTOR_RANGE*)b;
+	if (ra->start < rb->start) return -1;
+	if (ra->start > rb->start) return 1;
+	return 0;
+}
+
+DWORD64* GetFileClusters(HANDLE hFile, DWORD* pCount) {
+	RETRIEVAL_POINTERS_BUFFER* rp = NULL;
+	DWORD bytesRet = 0;
+	LARGE_INTEGER startingVcn = { 0 };
+	DWORD64* clusters = NULL;
+	*pCount = 0;
+
+	DWORD bufferSize = 4096;
+	while (1) {
+		rp = (RETRIEVAL_POINTERS_BUFFER*)malloc(bufferSize);
+		if (!rp) return NULL;
+		BOOL ok = DeviceIoControl(hFile, FSCTL_GET_RETRIEVAL_POINTERS,
+			&startingVcn, sizeof(startingVcn),
+			rp, bufferSize, &bytesRet, NULL);
+		if (ok) break;
+		DWORD err = GetLastError();
+		if (err == ERROR_MORE_DATA || err == ERROR_INSUFFICIENT_BUFFER) {
+			free(rp);
+			bufferSize *= 2;
+			if (bufferSize > 1024 * 1024) return NULL;
+		}
+		else {
+			free(rp);
+			return NULL;
+		}
+	}
+
+	DWORD total = 0;
+	for (DWORD i = 0; i < rp->ExtentCount; i++) {
+		DWORD64 prevVcn = (i == 0) ? rp->StartingVcn.QuadPart : rp->Extents[i - 1].NextVcn.QuadPart;
+		total += (DWORD)(rp->Extents[i].NextVcn.QuadPart - prevVcn);
+	}
+
+	clusters = (DWORD64*)malloc(total * sizeof(DWORD64));
+	if (!clusters) { free(rp); return NULL; }
+
+	DWORD idx = 0;
+	for (DWORD i = 0; i < rp->ExtentCount; i++) {
+		DWORD64 lcn = rp->Extents[i].Lcn.QuadPart;
+		DWORD64 prevVcn = (i == 0) ? rp->StartingVcn.QuadPart : rp->Extents[i - 1].NextVcn.QuadPart;
+		DWORD64 count = rp->Extents[i].NextVcn.QuadPart - prevVcn;
+		for (DWORD64 j = 0; j < count; j++) {
+			clusters[idx++] = lcn + j;
+		}
+	}
+	*pCount = total;
+	free(rp);
+	return clusters;
+}
+
+DWORD64 GetFileRecordNumber(HANDLE hFile) {
+	BY_HANDLE_FILE_INFORMATION info;
+	if (!GetFileInformationByHandle(hFile, &info)) {
+		return 0;
+	}
+	DWORD64 index = ((DWORD64)info.nFileIndexHigh << 32) | info.nFileIndexLow;
+	return index & 0x0000FFFFFFFFFFFFULL;
+}
+
+BOOLEAN GetFileSectorList(PWCHAR filePath, PSECTOR_RANGE* pSectorList, SIZE_T* length) {
+	PSECTOR_RANGE ranges = NULL;
+	wchar_t driveRoot[4];
+	wcsncpy_s(driveRoot, 4, filePath, 3);
+	driveRoot[3] = L'\0';
+
+	DWORD sectorsPerCluster = 0, bytesPerSector = 0;
+	if (!GetDiskFreeSpaceW(driveRoot, &sectorsPerCluster, &bytesPerSector, NULL, NULL)) {
+		R3Logger("[-] GetDiskFreeSpace failed, error %d\n", GetLastError());
+		return FALSE;
+	}
+	R3Logger("[*] Sectors per cluster: %d, Bytes per sector: %d\n", sectorsPerCluster, bytesPerSector);
+	DWORD bytesPerCluster = sectorsPerCluster * bytesPerSector;
+
+	HANDLE hFile = CreateFileW(filePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) {
-		return 1;
+		R3Logger("[-] Failed to open file, error %d\n", GetLastError());
+		return FALSE;
 	}
 
-	STARTING_VCN_INPUT_BUFFER inputVcn = { 0 };
-	BYTE outputBuffer[1024];
-	DWORD bytesReturned;
+	DWORD rangeCount = 0;
 
-	BOOL result = DeviceIoControl(
-		hFile,
-		FSCTL_GET_RETRIEVAL_POINTERS,
-		&inputVcn, sizeof(inputVcn),
-		&outputBuffer, sizeof(outputBuffer),
-		&bytesReturned,
-		NULL
-	);
+	DWORD count = 0;
+	DWORD64* clusters = GetFileClusters(hFile, &count);
+	if (clusters) {
+		for (DWORD i = 0; i < count; i++) {
+			DWORD64 start = clusters[i] * sectorsPerCluster;
+			SECTOR_RANGE* newRanges = (SECTOR_RANGE*)realloc(ranges, (rangeCount + 1) * sizeof(SECTOR_RANGE));
+			if (!newRanges) {
+				free(ranges);
+				free(clusters);
+				CloseHandle(hFile);
+				return FALSE;
+			}
+			ranges = newRanges;
+			ranges[rangeCount].start = start;
+			ranges[rangeCount].length = sectorsPerCluster;
+			rangeCount++;
+		}
+		free(clusters);
+	}
 
-	if (!result) {
+
+	DWORD64 recordNum = GetFileRecordNumber(hFile);
+	if (recordNum == 0) {
 		CloseHandle(hFile);
-		return 1;
+		free(ranges);
+		return FALSE;
 	}
 
-	PRETRIEVAL_POINTERS_BUFFER pPointers = (PRETRIEVAL_POINTERS_BUFFER)outputBuffer;
+	HANDLE hVol = CreateFileW(driveRoot, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+	if (hVol == INVALID_HANDLE_VALUE) {
+		R3Logger("[-] Failed to open volume, error %d\n", GetLastError());
+		CloseHandle(hFile);
+		free(ranges);
+		return FALSE;
+	}
 
-	LONGLONG startVcn = pPointers->StartingVcn.QuadPart;
-	LONGLONG startLcn = pPointers->Extents[0].Lcn.QuadPart;
-	LONGLONG nextVcn = pPointers->Extents[0].NextVcn.QuadPart;
+	NTFS_VOLUME_DATA_BUFFER volData;
+	DWORD bytesRet;
+	if (!DeviceIoControl(hVol, FSCTL_GET_NTFS_VOLUME_DATA, NULL, 0,
+		&volData, sizeof(volData), &bytesRet, NULL)) {
+		R3Logger("[-] FSCTL_GET_NTFS_VOLUME_DATA failed, error %d\n", GetLastError());
+		CloseHandle(hVol);
+		CloseHandle(hFile);
+		free(ranges);
+		return FALSE;
+	}
+	CloseHandle(hVol);
 
-	LONGLONG clusterCount = nextVcn - startVcn;
+	DWORD64 mftStartLcn = volData.MftStartLcn.QuadPart;
+	DWORD mftRecordSize = volData.BytesPerFileRecordSegment;
 
-	DWORD sectorsPerCluster, bytesPerSector, freeClusters, totalClusters;
-	GetDiskFreeSpaceW(L"C:\\", &sectorsPerCluster, &bytesPerSector, &freeClusters, &totalClusters);
+	DWORD64 offsetInMft = recordNum * mftRecordSize;
+	DWORD64 clusterIndex = offsetInMft / bytesPerCluster;
+	DWORD64 offsetInCluster = offsetInMft % bytesPerCluster;
+	DWORD64 lcn = mftStartLcn + clusterIndex;
+	DWORD64 sectorStart = lcn * sectorsPerCluster + offsetInCluster / bytesPerSector;
+	DWORD sectorsPerRecord = mftRecordSize / bytesPerSector;
+	SECTOR_RANGE* newRanges = (SECTOR_RANGE*)realloc(ranges, (rangeCount + 1) * sizeof(SECTOR_RANGE));
+	if (!newRanges) {
+		free(ranges);
+		CloseHandle(hFile);
+		return FALSE;
+	}
+	ranges = newRanges;
+	ranges[rangeCount].start = sectorStart;
+	ranges[rangeCount].length = sectorsPerRecord;
+	rangeCount++;
 
-	startSector = startLcn * sectorsPerCluster;
-	byteOffset = clusterCount * sectorsPerCluster;
+	WCHAR parentPath[MAX_PATH];
+	wcscpy_s(parentPath, MAX_PATH, filePath);
+	WCHAR* lastSlash = wcsrchr(parentPath, L'\\');
+	if (lastSlash) {
+		*lastSlash = L'\0';
+		HANDLE hParent = CreateFileW(parentPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+			NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+		if (hParent != INVALID_HANDLE_VALUE) {
+			DWORD parentCount = 0;
+			DWORD64* parentClusters = GetFileClusters(hParent, &parentCount);
+			if (parentClusters) {
+				for (DWORD i = 0; i < parentCount; i++) {
+					DWORD64 start = parentClusters[i] * sectorsPerCluster;
+					SECTOR_RANGE* newRanges2 = (SECTOR_RANGE*)realloc(ranges, (rangeCount + 1) * sizeof(SECTOR_RANGE));
+					if (!newRanges2) {
+						free(ranges);
+						free(parentClusters);
+						CloseHandle(hParent);
+						CloseHandle(hFile);
+						return FALSE;
+					}
+					ranges = newRanges2;
+					ranges[rangeCount].start = start;
+					ranges[rangeCount].length = sectorsPerCluster;
+					rangeCount++;
+				}
+				free(parentClusters);
+			}
+			CloseHandle(hParent);
+		}
+		else {
+			R3Logger("[-] Failed to open parent directory, error %d\n", GetLastError());
+		}
+	}
 
 	CloseHandle(hFile);
-	return 0;
+
+	if (rangeCount == 0) return TRUE;
+
+	qsort(ranges, rangeCount, sizeof(SECTOR_RANGE), CompareRange);
+
+	DWORD mergedCount = 0;
+	for (DWORD i = 0; i < rangeCount; i++) {
+		if (mergedCount == 0) {
+			ranges[mergedCount++] = ranges[i];
+			continue;
+		}
+		SECTOR_RANGE* last = &ranges[mergedCount - 1];
+		if (ranges[i].start <= last->start + last->length) {
+			DWORD64 newEnd = ranges[i].start + ranges[i].length;
+			if (newEnd > last->start + last->length) {
+				last->length = newEnd - last->start;
+			}
+		}
+		else {
+			ranges[mergedCount++] = ranges[i];
+		}
+	}
+
+	R3Logger("[*] File: %ws\n", filePath);
+	for (DWORD i = 0; i < mergedCount; i++) {
+		printf("[*] Start: %lld, Length: %lld\n", ranges[i].start, ranges[i].length);
+	}
+
+	*pSectorList = ranges;
+	*length = mergedCount;
+	return TRUE;
+}
+
+BOOLEAN CreateAndWriteFile(PWCHAR filepath, PVOID context, SIZE_T size) {
+	HANDLE hFile = CreateFile(filepath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hFile == INVALID_HANDLE_VALUE) {
+		R3Logger("[-] Failed to create file %ws\n", filepath);
+		return FALSE;
+	}
+
+	DWORD bytesWritten = 0;
+	if (!WriteFile(hFile, context, size, &bytesWritten, NULL) || bytesWritten != size) {
+		CloseHandle(hFile);
+		R3Logger("[-] Failed to write file %ws.\n", filepath);
+		return FALSE;
+	}
+
+	CloseHandle(hFile);
+	return TRUE;
+}
+
+BOOLEAN CreateAndReadFile(PWCHAR filepath, PVOID buf, SIZE_T size) {
+	HANDLE hFile = CreateFile(filepath, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hFile == INVALID_HANDLE_VALUE) {
+		R3Logger("[-] Failed to open file %ws\n", filepath);
+		return FALSE;
+	}
+
+	DWORD bytesRead = 0;
+	if (!ReadFile(hFile, buf, size, &bytesRead, NULL) || bytesRead != size) {
+		CloseHandle(hFile);
+		R3Logger("[-] Failed to read file %ws\n", filepath);
+		return FALSE;
+	}
+
+	CloseHandle(hFile);
+	return TRUE;
 }
 
 BOOLEAN WriteConfigFile(BOOLEAN bypass) {
@@ -200,19 +429,19 @@ BOOLEAN WriteConfigFile(BOOLEAN bypass) {
 	DWORD bytesWritten = 0;
 	if (!WriteFile(hFile, config, fileSize, &bytesWritten, NULL) || bytesWritten != fileSize) {
 		CloseHandle(hFile);
-		printf("[-] Fail to write config file.\n");
+		R3Logger("[-] Fail to write config file.\n");
 		return FALSE;
 	}
 	FlushFileBuffers(hFile);
 	CloseHandle(hFile);
-	printf("[+] Successfully written to configuration file!\n");
+	R3Logger("[+] Successfully written to configuration file!\n");
 	return TRUE;
 }
 
 BOOLEAN InitRedirectFile() {
 	HANDLE hFile = CreateFile(redirectFilePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) {
-		printf("[-] Failed to create redirect file.\n");
+		R3Logger("[-] Failed to create redirect file.\n");
 		return FALSE;
 	}
 	CloseHandle(hFile);
@@ -220,23 +449,7 @@ BOOLEAN InitRedirectFile() {
 }
 
 BOOLEAN InitDllFile(DWORD volume) {
-	HANDLE hDllFile = CreateFile(dllFilePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hDllFile == INVALID_HANDLE_VALUE) {
-		printf("[-] Failed to create dll file.");
-		return FALSE;
-	}
-
-	DWORD bytesWritten = 0;
-	if (!WriteFile(hDllFile, raw_dll, sizeof(raw_dll), &bytesWritten, NULL) || bytesWritten != sizeof(raw_dll)) {
-		CloseHandle(hDllFile);
-		printf("[-] Fail to write dll file.\n");
-		return FALSE;
-	}
-	CloseHandle(hDllFile);
-
-	HANDLE hCmdFile = CreateFile(cmdFilePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hCmdFile == INVALID_HANDLE_VALUE) {
-		printf("[-] Failed to create cmdline file");
+	if (!CreateAndWriteFile(configFilePath, (PVOID)raw_dll, sizeof(raw_dll))) {
 		return FALSE;
 	}
 
@@ -246,7 +459,7 @@ BOOLEAN InitDllFile(DWORD volume) {
 	DWORD pathLen = GetModuleFileNameA(NULL, cmdline, sizeof(cmdline));
 	ptr += pathLen;
 	if (pathLen == 0) {
-		printf("[-] Failed to get file path.");
+		R3Logger("[-] Failed to get file path.");
 		return FALSE;
 	}
 
@@ -263,13 +476,9 @@ BOOLEAN InitDllFile(DWORD volume) {
 	}
 	*ptr = '\x00';
 
-	bytesWritten = 0;
-	if (!WriteFile(hCmdFile, cmdline, sizeof(cmdline), &bytesWritten, NULL) || bytesWritten != sizeof(cmdline)) {
-		CloseHandle(hCmdFile);
-		printf("[-] Fail to write cmdline file.\n");
+	if (!CreateAndWriteFile(cmdFilePath, cmdline, sizeof(cmdline))) {
 		return FALSE;
 	}
-	CloseHandle(hCmdFile);
 
 	return TRUE;
 }
@@ -287,83 +496,82 @@ BOOLEAN DeleteDllFile() {
 }
 
 VOID PrintVolumeInfo() {
-	printf("---------------VOLUME INFO---------------\n");
+	R3Logger("---------------VOLUME INFO---------------\n");
 	for (int i = 0; i < 26; i++) {
 		PVOLUME_INFO_R3 pVolumeInfo = volumeInfoTable[i];
 		if (!pVolumeInfo) {
 			continue;
 		}
 
-		printf("[*] volume name: %c\n", pVolumeInfo->name);
-		printf("[*] volume protection status: ");
+		R3Logger("[*] volume name: %c\n", pVolumeInfo->name);
+		R3Logger("[*] volume protection status: ");
 		switch (pVolumeInfo->volumeProtectType) {
 		case UNPROTECTED:
-			printf("unprotected\n\n");
+			R3Logger("unprotected\n\n");
 			continue;
 		case PROTECTED:
-			printf("protected\n");
+			R3Logger("protected\n");
 			break;
 		case BYPASS:
-			printf("bypass\n");
+			R3Logger("bypass\n");
 			break;
 		default:
-			printf("unknown\n\n");
+			R3Logger("unknown\n\n");
 			continue;
 		}
-		printf("[*] starting offset: %llu\n", pVolumeInfo->physicalStartingOffset);
-		printf("[*] volume size: %llu Bytes\n", pVolumeInfo->volumeTotalBytes);
-		printf("[*] reserved: %llu Bytes\n", pVolumeInfo->reservedBlockBytes);
-		printf("\n");
+		R3Logger("[*] starting offset: %llu\n", pVolumeInfo->physicalStartingOffset);
+		R3Logger("[*] volume size: %llu Bytes\n", pVolumeInfo->volumeTotalBytes);
+		R3Logger("[*] volume sector count: %llu\n", pVolumeInfo->volumeSectorCount);
+		R3Logger("\n");
 	}
 
-	printf("---------------CONFIG INFO---------------\n");
+	R3Logger("---------------CONFIG INFO---------------\n");
 	FREEZE_CONFIG _config = { 0 };
 	if (!ReadConfigFile(configFilePath, (PBYTE) & _config)) {
-		printf("[-] Failed to analysis config info.\n");
+		R3Logger("[-] Failed to analysis config info.\n");
 		return;
 	}
 
-	printf("[*] protected volumes: ");
+	R3Logger("[*] protected volumes: ");
 	BOOLEAN protect = FALSE;
 	for (int i = 0; i < 26; i++) {
 		if (_config.volumeProtected & 1llu << i) {
-			printf("%c ", 'A' + i);
+			R3Logger("%c ", 'A' + i);
 			protect = TRUE;
 		}
 	}
-	if (!protect) printf("none");
-	printf("\n\n");
+	if (!protect) R3Logger("none");
+	R3Logger("\n\n");
 
-	printf("[*] file filter for config: ");
+	R3Logger("[*] file filter for config: ");
 	switch (filterInfo) {
 		case NOT_INSTALLED: {
-			printf("not installed\n");
-			break;
+			R3Logger("not installed\n\n");
+			return;
 		}
 		case INSTALLED: {
-			printf("installed\n");
+			R3Logger("installed\n");
 			break;
 		}
 		case DISABLED: {
-			printf("disabled\n");
-			break;
+			R3Logger("disabled\n\n");
+			return;
 		}
 	}
-	printf("\n");
 
 	if (!ReadConfigFile(redirectFilePath, (PBYTE)&_config)) {
-		printf("[-] Failed to analysis config info.\n");
+		R3Logger("[-] Failed to analysis config info.\n");
 		return;
 	}
 
-	printf("[*] displayed protected volumes: ");
+	R3Logger("[*] displayed protected volumes: ");
 	protect = FALSE;
 	for (int i = 0; i < 26; i++) {
 		if (_config.volumeProtected & 1llu << i) {
-			printf("%c ", 'A' + i);
+			R3Logger("%c ", 'A' + i);
 			protect = TRUE;
 		}
 	}
-	if (!protect) printf("none");
-	printf("\n\n");
+	if (!protect) R3Logger("none");
+	R3Logger("\n\n");
 }

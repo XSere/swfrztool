@@ -253,7 +253,7 @@ typedef struct _FRZ_BITMAP
     DWORD64 BlockMask;
     DWORD64 LeafNodeSize;
     DWORD64 BlockCount;
-    PVOLUME_BITMAP_BUFFER* BlockTable;
+    PVOID* BlockTable;
 } FRZ_BITMAP, * PFRZ_BITMAP;
 
 typedef struct _VOLUME_INFO_R0
@@ -261,7 +261,9 @@ typedef struct _VOLUME_INFO_R0
     BYTE isProtected;
     BYTE isProtected2;
     WCHAR name;
-    BYTE align1[20];
+    DWORD diskNumber;
+    DWORD PartitionNumber;
+    BYTE align1[12];
     DWORD64 reservedBlockBytes;
     DWORD64 physicalStartingOffset;
     DWORD64 volumeTotalBytes;
@@ -272,7 +274,10 @@ typedef struct _VOLUME_INFO_R0
     PVOID pDeviceObject;
     DWORD64 volumeSectorCount;
     BYTE align3[24];
-    _FRZ_BITMAP* pFrzBitMapTable[4];
+    PFRZ_BITMAP pAllocBitmap;
+    PFRZ_BITMAP pRWWhitelistBitmap;
+    PFRZ_BITMAP pRedirectBitmap;
+    PFRZ_BITMAP pWWhiteListBitmap;
     BYTE align4[80];
     DWORD64 itemStartSectorList[4];
     DWORD64 itemSectorOffsetList[4];
@@ -283,17 +288,78 @@ typedef struct _VOLUME_INFO_R0
 } VOLUME_INFO_R0, * PVOLUME_INFO_R0;
 #pragma pack(pop)
 
+enum VOLUME_PROTECTION_STATUS {
+    UNKNOWN,
+    UNPROTECTED,
+    PROTECTED,
+    BYPASS
+};
+
+enum FILTER_INSTALLATION_STATUS {
+    NOT_INSTALLED,
+    INSTALLED,
+    DISABLED,
+};
+
+typedef struct _VOLUME_INFO_R3 {
+    CHAR name;
+    VOLUME_PROTECTION_STATUS volumeProtectType;
+    DWORD64 physicalStartingOffset;
+    DWORD64 volumeTotalBytes;
+    DWORD64 volumeSectorCount;
+} VOLUME_INFO_R3, * PVOLUME_INFO_R3;
+
+typedef struct {
+    DWORD64 start;
+    DWORD64 length;
+} SECTOR_RANGE, * PSECTOR_RANGE;
+
+typedef struct _R0_PARAMS {
+    union {
+        struct {
+            BOOLEAN recoverDiskMjFunc;
+        } mjFunc;
+        struct {
+            DWORD64 volumeIndex;
+            union {
+                struct {
+                    PSECTOR_RANGE ranges;
+                    DWORD64 length;
+                    BOOLEAN value;
+                };
+                struct {
+                    DWORD64 startSector;
+                    DWORD64 sectorCount;
+                    PVOID buffer;
+                };
+            };
+        } whiteList;
+        struct {
+            DWORD64 volume;
+            BOOLEAN protection;
+        } volumeProtection;
+        struct {
+            DWORD64 volume;
+        } flt;
+    };
+} R0_PARAMS, * PR0_PARAMS;
+
 enum TASK {
     TASK_ERROR,
     TASK_HELP,
-    TASK_MODIFY_CONFIG_BY_MJ_FUNC,
-    TASK_MODIFY_CONFIG_BY_WHITE_LIST,
-    TASK_MODIFY_CONFIG_BY_WHITE_LIST_EX,
+    TASK_UPDATE_CONFIG,
+    TASK_SET_MJ_FUNC,
+    TASK_MODIFY_WHITE_LIST_BY_FILE,
+    TASK_MODIFY_WHITE_LIST_BY_RANGE,
+    TASK_MODIFY_WHITE_LIST_BY_BITMAP,
+    TASK_GET_WHITE_LIST_BITMAP,
+    TASK_MODIFY_VOLUME_PROTECTION_STATUS,
     TASK_INSTALL_FILE_FILTER,
     TASK_GET_FREEZE_INFO
 };
 
 using get_system_routine_t = void* (*)(void*, const char*);
+using r0func = BOOLEAN(*)(PVOID, get_system_routine_t, PR0_PARAMS);
 using DbgPrint_T = NTSTATUS(*)(PCSTR, ...);
 using IoGetDeviceObjectPointer_T = NTSTATUS(*)(PUNICODE_STRING, ACCESS_MASK, PVOID*, PVOID*);
 using MmIsAddressValid_T = BOOLEAN(*)(PVOID);

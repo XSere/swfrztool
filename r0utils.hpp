@@ -2,10 +2,10 @@
 
 #define InitFunctionByName(name) name = (name##_T)get_kroutine(krnl_base, #name);
 
-extern CHAR logBuf[4096];
+extern PCHAR logBuf;
 extern CHAR* logBufPtr;
 
-VOID Logger(LPCSTR fmt, ...);
+VOID R0Logger(LPCSTR fmt, ...);
 BOOLEAN GetDriverBaseAndSize(const char* targetModuleName, PVOID* pDriverBase, SIZE_T* pDriverSize);
 DWORD64 ScanPatternByMask(PVOID base, SIZE_T limit, BYTE* pattern, SIZE_T patternSize, BYTE* mask);
 DWORD64 ScanPattern(PVOID base, SIZE_T limit, BYTE* pattern, SIZE_T patternSize);
@@ -16,3 +16,4 @@ VOID InitFunctionForFileFilter(PVOID krnl_base, get_system_routine_t get_kroutin
 PDRIVER_OBJECT GetDriverObjectByName(WCHAR* DriverName);
 PVOID InitRWmemForShellcode(PVOID base, SIZE_T size, PMDL* ppMdl);
 VOID ReleaseRwmem(PMDL pMdl, PVOID addr);
+VOID BmpSetRangeOfBits(DWORD64* bitmap, DWORD64 startSector, DWORD64 sectorCount, BOOLEAN value);

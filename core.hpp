@@ -2,7 +2,7 @@
 #include "r3utils.hpp"
 #include <stdio.h>
 
-typedef struct _CALLBACK_PARAMS {
+typedef struct _FLT_CALLBACK_PARAMS {
     FltGetFileNameInformation_T FltGetFileNameInformation;
     FltParseFileNameInformation_T FltParseFileNameInformation;
     FltReleaseFileNameInformation_T FltReleaseFileNameInformation;
@@ -13,11 +13,13 @@ typedef struct _CALLBACK_PARAMS {
     BOOLEAN isRedirect;
     WCHAR configPath[MAX_PATH];
     WCHAR redirectPath[MAX_PATH];
-} CALLBACK_PARAMS, * PCALLBACK_PARAMS;
+} FLT_CALLBACK_PARAMS, * PFLT_CALLBACK_PARAMS;
 
-EXTERN_C FLT_PREOP_CALLBACK_STATUS PreCreateCallback(PFLT_CALLBACK_DATA Data, PFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext, PCALLBACK_PARAMS params);
-VOID InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutine);
-VOID ModifyConfigByMjFunc(PVOID krnl_base, get_system_routine_t get_kroutine);
-VOID ModifyConfigByWhiteList(PVOID krnl_base, get_system_routine_t get_kroutine);
-VOID ModifyConfigByWhiteListEx(PVOID krnl_base, get_system_routine_t get_kroutine);
-VOID GetFreezeInfo(PVOID krnl_base, get_system_routine_t get_kroutine);
+EXTERN_C FLT_PREOP_CALLBACK_STATUS PreCreateCallback(PFLT_CALLBACK_DATA Data, PFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext, PFLT_CALLBACK_PARAMS params);
+BOOLEAN InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_kroutine, PR0_PARAMS r0params);
+BOOLEAN SetMjFunc(PVOID krnl_base, get_system_routine_t get_kroutine, PR0_PARAMS r0params);
+BOOLEAN ModifyWhiteListByRanges(PVOID krnl_base, get_system_routine_t get_kroutine, PR0_PARAMS r0params);
+BOOLEAN ModifyWhiteListByBuffer(PVOID krnl_base, get_system_routine_t get_kroutine, PR0_PARAMS r0params);
+BOOLEAN GetWhiteListBitmap(PVOID krnl_base, get_system_routine_t get_kroutine, PR0_PARAMS r0params);
+BOOLEAN ModifyVolumeProtectionStatus(PVOID krnl_base, get_system_routine_t get_kroutine, PR0_PARAMS r0params);
+BOOLEAN GetFreezeInfo(PVOID krnl_base, get_system_routine_t get_kroutine, PR0_PARAMS r0params);

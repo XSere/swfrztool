@@ -17,12 +17,15 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <cstdarg>
 #include "ia32.hpp"
 
 #include <Psapi.h>
 #include <fltuser.h>
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "fltLib.lib")
+
+VOID R3Logger(LPCSTR fmt, ...);
 
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
 {

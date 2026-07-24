@@ -1,6 +1,9 @@
 #include "r0utils.hpp"
 
-CHAR logBuf[4096] = { 0 };
+#define bufSize 4096
+
+SIZE_T bufUsed = 0;
+PCHAR logBuf = (PCHAR)malloc(bufSize);
 CHAR* logBufPtr = logBuf;
 
 DbgPrint_T DbgPrint = NULL;
@@ -25,12 +28,21 @@ MmMapLockedPagesSpecifyCache_T MmMapLockedPagesSpecifyCache = NULL;
 IoFreeMdl_T IoFreeMdl = NULL;
 PVOID* IoDriverObjectType = NULL;
 
-VOID Logger(LPCSTR fmt, ...) {
+VOID R0Logger(LPCSTR fmt, ...) {
 	va_list args;
+	if (!logBuf) return;
+
+	if (strlen(fmt) + bufUsed < bufUsed) {
+		logBuf = (PCHAR)realloc(logBuf, bufUsed + bufSize);
+		if (!logBuf) return;
+		logBufPtr = logBuf + bufUsed;
+	}
+
 	va_start(args, fmt);
 	vsprintf(logBufPtr, fmt, args);
 	DbgPrint("%s", logBufPtr);
 	logBufPtr = logBuf + strlen(logBuf);
+	bufUsed = strlen(logBuf);
 	va_end(args);
 }
 
@@ -163,7 +175,7 @@ PVOID InitRWmemForShellcode(PVOID base, SIZE_T size, PMDL* ppMdl) {
 	PMDL pMdl = IoAllocateMdl(base, size, FALSE, FALSE, NULL);
 	if (pMdl == NULL)
 	{
-		Logger("[-] Failed to allocate MDL for file filter function\n");
+		R0Logger("[-] Failed to allocate MDL for file filter function\n");
 		return NULL;
 	}
 	*ppMdl = pMdl;
@@ -174,7 +186,7 @@ PVOID InitRWmemForShellcode(PVOID base, SIZE_T size, PMDL* ppMdl) {
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
-		Logger("[-] Failed to lock pages for file filter function\n");
+		R0Logger("[-] Failed to lock pages for file filter function\n");
 		ReleaseRwmem(pMdl, NULL);
 		return NULL;
 	}
@@ -194,6 +206,35 @@ VOID ReleaseRwmem(PMDL pMdl, PVOID addr) {
 	{
 		MmUnlockPages(pMdl);
 		IoFreeMdl(pMdl);
+	}
+}
+
+VOID BmpSetRangeOfBits(DWORD64* bitmap, DWORD64 startSector, DWORD64 sectorCount, BOOLEAN value) {
+	DWORD64 startBlock = startSector / 64;
+	DWORD64 startBit = startSector % 64;
+	DWORD64 endSector = startSector + sectorCount;
+	DWORD64 endBlock = endSector / 64;
+	DWORD64 endBit = endSector % 64;
+
+	if (startBlock == endBlock) {
+		DWORD64 mask = ((1ULL << (endBit - startBit)) - 1) << startBit;
+		if (value) bitmap[startBlock] |= mask;
+		else bitmap[startBlock] &= ~mask;
+		return;
+	}
+
+	DWORD64 maskStart = (~0ULL) << startBit;
+	if (value) bitmap[startBlock] |= maskStart;
+	else bitmap[startBlock] &= ~maskStart;
+
+	for (DWORD64 block = startBlock + 1; block < endBlock; block++) {
+		bitmap[block] = value ? ~0ULL : 0ULL;
+	}
+
+	if (endBit > 0) {
+		DWORD64 maskEnd = (1ULL << endBit) - 1;
+		if (value) bitmap[endBlock] |= maskEnd;
+		else bitmap[endBlock] &= ~maskEnd;
 	}
 }
 
