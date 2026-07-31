@@ -340,6 +340,7 @@ typedef struct _R0_PARAMS {
         } volumeProtection;
         struct {
             DWORD64 volume;
+            WCHAR volumeNtName[23];
         } flt;
     };
 } R0_PARAMS, * PR0_PARAMS;

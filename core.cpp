@@ -157,6 +157,8 @@ BOOLEAN InstallCreateFileCallback(PVOID krnl_base, get_system_routine_t get_krou
 	params->isRedirect = TRUE;
 	RtlCopyMemory(params->configPath, configFilePathNt, sizeof(configFilePathNt));
 	RtlCopyMemory(params->redirectPath, redirectFilePathNt, sizeof(redirectFilePathNt));
+	RtlCopyMemory(params->configPath, r0params->flt.volumeNtName, sizeof(configFilePathNt) - sizeof(WCHAR));
+	RtlCopyMemory(params->redirectPath, r0params->flt.volumeNtName, sizeof(redirectFilePathNt) - sizeof(WCHAR));
 	*(PFLT_CALLBACK_PARAMS*)(mov_r9 + 2) = params;
 
 	PVOID prefunc = ExAllocatePool(0, preCreateFuncSize);

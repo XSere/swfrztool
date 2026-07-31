@@ -411,6 +411,7 @@ int __cdecl wmain(int argc, wchar_t** argv) {
             if (!IsDriverLoaded(L"SWFreeze.sys")) return 1;
             if (!IsFilterDriverLoaded(L"SeewoKeLiteLady")) return 1;
             if (!GenerateFreezeConfig(volumeArguments)) return 1;
+            if (!QueryDosDeviceW(L"C:", params.flt.volumeNtName, sizeof(params.flt.volumeNtName))) return 1;
             if (!InitR0Executer()) return 1;
             if (!R0Executer(InstallCreateFileCallback)) return 1;
             if (volumeArguments != -1) {

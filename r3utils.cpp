@@ -449,7 +449,7 @@ BOOLEAN InitRedirectFile() {
 }
 
 BOOLEAN InitDllFile(DWORD volume) {
-	if (!CreateAndWriteFile(configFilePath, (PVOID)raw_dll, sizeof(raw_dll))) {
+	if (!CreateAndWriteFile(dllFilePath, (PVOID)raw_dll, sizeof(raw_dll))) {
 		return FALSE;
 	}
 
